@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Test
+        run: pytest -q
+
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  determinism:
+    name: Same input, same verdict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+
+      # The core promise is determinism — it is what an LLM judge cannot offer
+      # and what lets this gate CI. Assert it: the same input produces
+      # byte-identical JSON across independent runs and across hash seeds.
+      - name: JSON output is byte-identical across runs
+        run: |
+          set -euo pipefail
+          cat > case.json <<'JSON'
+          {"answer": "Revenue was $3.1 million in Q3 [1]. Margins hit 47% [1]. They opened offices in Europe.",
+           "sources": ["The company reported revenue of $3.1 million in the third quarter.",
+                       "Customer satisfaction improved during the period."]}
+          JSON
+          PYTHONHASHSEED=1 groundcheck --json-input case.json --json > a.json
+          PYTHONHASHSEED=2 groundcheck --json-input case.json --json > b.json
+          groundcheck --json-input case.json --json > c.json
+          if ! diff -q a.json b.json || ! diff -q a.json c.json; then
+            echo "non-deterministic output"; diff a.json b.json || true; exit 1
+          fi
+          echo "deterministic across seeds and runs"
+
+      - name: Catches the fabricated statistic
+        run: |
+          set -euo pipefail
+          # margins 47% is not in the sources -> a high finding -> exit 1
+          if groundcheck --json-input case.json --fail-on high; then
+            echo "failed to catch the fabricated number"; exit 1
+          fi
+          echo "ok: fabricated 47% caught"
+
+      - name: A fully grounded answer passes
+        run: |
+          set -euo pipefail
+          cat > good.json <<'JSON'
+          {"answer": "The company reported revenue of $3.1 million in the third quarter.",
+           "sources": ["The company reported revenue of $3.1 million in the third quarter, up from $2.8 million."]}
+          JSON
+          groundcheck --json-input good.json --fail-on low --fail-under 100
+          echo "ok: grounded answer passes"
