@@ -9,6 +9,10 @@ A **deterministic groundedness linter** for RAG and LLM answers. It reads an
 answer and the sources it was supposed to be based on, and flags the claims that
 aren't actually supported — above all, **fabricated numbers**.
 
+**[Try it in your browser](https://rootx22.github.io/groundcheck/)**: paste an
+answer and its sources and see what it flags. It runs groundcheck itself through
+Pyodide, so nothing you paste leaves the page and no model is called.
+
 ```console
 $ groundcheck --answer answer.txt --source q3-report.txt --fail-on high
 
