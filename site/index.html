@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>groundcheck: catch the numbers your RAG answer made up</title>
+<meta name="description" content="Paste an LLM answer and the sources it was given. groundcheck flags fabricated numbers, unsupported claims, misattributed citations and flipped negations, deterministically. Runs in your browser.">
+<link rel="canonical" href="https://rootx22.github.io/groundcheck/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://rootx22.github.io/groundcheck/">
+<meta property="og:title" content="groundcheck: catch the numbers your RAG answer made up">
+<meta property="og:description" content="A deterministic groundedness linter for RAG answers. Same input, same verdict, so it can gate CI. Try it in your browser.">
+<meta property="og:image" content="https://rootx22.github.io/groundcheck/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230d1117'/%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' stroke='%2339d353' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d1117;
+    --surface: #161b22;
+    --raised: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #39d353;
+    --green-deep: #238636;
+    --high: #ff5f57;
+    --medium: #f2c14e;
+    --low: #58a6ff;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); }
+  a { color: var(--low); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, textarea { font-family: var(--mono); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; }
+
+  header.top { border-bottom: 1px solid var(--border); background: var(--surface); }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 12px; }
+  .brand { color: var(--text); font: 600 17px var(--mono); }
+  .brand span { color: var(--green); }
+  nav { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  nav a { color: var(--muted); font-size: 14px; }
+  .star { color: var(--text) !important; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; background: var(--raised); white-space: nowrap; }
+  .star:hover { border-color: var(--muted); text-decoration: none !important; }
+  .star b { font-variant-numeric: tabular-nums; font-weight: 600; margin-inline-start: 4px; }
+
+  .intro { padding-block: 34px 18px; max-width: 780px; }
+  h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.2; margin: 0 0 12px; text-wrap: balance; letter-spacing: -0.5px; }
+  h2 { font-size: 18px; margin: 0 0 6px; }
+  .intro p { margin: 0 0 10px; color: #c9d1d9; }
+  .private { color: var(--muted) !important; font-size: 14px; }
+
+  .workspace { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 900px) { .workspace { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .panel-head > label, .panel-head > span { font-weight: 600; }
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: 13px var(--sans); color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--green-deep); border-color: #2ea043; font-weight: 600; }
+  button.primary:hover { background: #2ea043; }
+  textarea { width: 100%; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.6; }
+  textarea:focus { outline: 2px solid var(--low); outline-offset: -1px; }
+  #answer { min-height: 170px; }
+  .sources { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .source { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+  .source .tag { font: 600 13px var(--mono); color: var(--muted); padding-top: 9px; min-width: 26px; }
+  .source textarea { min-height: 76px; }
+  .source .remove { padding: 4px 8px; margin-top: 4px; }
+  .controls { display: flex; gap: 10px 18px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .threshold { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+  .threshold output { font: 13px var(--mono); color: var(--text); min-width: 32px; }
+  #share-note { color: var(--muted); font-size: 13px; }
+
+  .status { color: var(--muted); margin: 0; }
+  .status.failed { color: var(--high); }
+  .score { display: flex; gap: 16px; align-items: center; margin-bottom: 14px; }
+  .score-number { font: 600 44px/1 var(--mono); font-variant-numeric: tabular-nums; }
+  .score-number small { font-size: 18px; color: var(--muted); }
+  .score-meta { color: var(--muted); font-size: 14px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; margin-top: 6px; width: 220px; max-width: 100%; }
+  .bar span { display: block; height: 100%; background: var(--green); }
+  .findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .finding { border: 1px solid var(--border); border-inline-start: 3px solid var(--muted); border-radius: 6px; padding: 9px 12px; background: var(--raised); }
+  .finding.high { border-inline-start-color: var(--high); }
+  .finding.medium { border-inline-start-color: var(--medium); }
+  .finding.low { border-inline-start-color: var(--low); }
+  .finding-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .sev { font: 600 11px var(--mono); letter-spacing: 0.6px; text-transform: uppercase; }
+  .finding.high .sev { color: var(--high); }
+  .finding.medium .sev { color: var(--medium); }
+  .finding.low .sev { color: var(--low); }
+  .kind { font: 12px var(--mono); color: var(--muted); }
+  .claim { margin-top: 4px; font-style: italic; }
+  .detail { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+  .clean { color: var(--green); }
+
+  section.block { margin-top: 30px; }
+  .hint { color: var(--muted); margin: 0 0 12px; font-size: 14px; max-width: 760px; }
+  .claims { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .claims li { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--border); align-items: baseline; }
+  .claims li:last-child { border-bottom: none; }
+  @media (max-width: 640px) { .claims li { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+  .verdict { font: 600 12px var(--mono); }
+  .verdict.yes { color: var(--green); }
+  .verdict.no { color: var(--high); }
+  .overlap { color: var(--muted); font: 12.5px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cli pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; font-size: 13px; margin: 0 0 10px; }
+  footer { border-top: 1px solid var(--border); margin-top: 40px; }
+  footer .wrap { padding-block: 18px; color: var(--muted); font-size: 13px; display: flex; gap: 6px 16px; flex-wrap: wrap; justify-content: space-between; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./">ground<span>check</span></a>
+    <nav>
+      <a href="https://github.com/RootX22/groundcheck#install">Install</a>
+      <a class="star" href="https://github.com/RootX22/groundcheck">Star on GitHub<b id="stars"></b></a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>Catch the numbers your RAG answer made up</h1>
+    <p>Paste an answer and the sources it was given. groundcheck flags figures that appear in no source, claims nothing supports, citations that point at the wrong source and negations that got flipped. It is deterministic: the same input always gets the same verdict, so it can gate a CI pipeline where a model acting as judge cannot.</p>
+    <p class="private">Everything runs in this page. Nothing you paste is sent anywhere, and no model is called.</p>
+  </section>
+
+  <div class="workspace">
+    <section class="panel">
+      <div class="panel-head">
+        <label for="answer">Answer</label>
+        <div class="tools">
+          <button id="example" type="button">Example</button>
+          <button id="clear" type="button">Clear</button>
+        </div>
+      </div>
+      <textarea id="answer" spellcheck="false"></textarea>
+      <div class="sources" id="sources"></div>
+      <div class="controls">
+        <button id="add-source" type="button">Add source</button>
+        <label class="threshold" for="threshold">Support threshold
+          <input type="range" id="threshold" min="0.3" max="0.8" step="0.05" value="0.5">
+          <output id="threshold-value" for="threshold">0.50</output>
+        </label>
+      </div>
+      <div class="controls">
+        <button id="share" type="button" class="primary">Copy share link</button>
+        <span id="share-note" role="status"></span>
+      </div>
+    </section>
+
+    <section class="panel" aria-live="polite">
+      <p id="status" class="status">Loading Python in your browser. About 10&nbsp;MB the first time, cached after that.</p>
+      <div id="report" hidden>
+        <div class="score">
+          <div class="score-number" id="score"></div>
+          <div>
+            <div class="score-meta" id="score-meta"></div>
+            <div class="bar"><span id="score-bar"></span></div>
+          </div>
+        </div>
+        <ol class="findings" id="findings"></ol>
+      </div>
+    </section>
+  </div>
+
+  <section class="block" id="claims-section" hidden>
+    <h2>Sentence by sentence</h2>
+    <p class="hint">Each claim, whether a source supports it, and how much of its wording the closest source shares. Connective sentences with nothing to check are left out.</p>
+    <ol class="claims" id="claims"></ol>
+  </section>
+
+  <section class="block cli">
+    <h2>The same check in your pipeline</h2>
+    <pre><code>pip install git+https://github.com/RootX22/groundcheck.git
+groundcheck --answer answer.txt --source doc1.txt --source doc2.txt
+echo '{"answer": "...", "sources": ["..."]}' | groundcheck --json-input - --fail-on high</code></pre>
+    <p class="hint">Standard library only, exit codes for CI, MIT licensed. <a href="https://github.com/RootX22/groundcheck">Source, docs and the limits of the heuristic</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Built by <a href="https://github.com/RootX22">Mohamed Mohsen Shehata</a></span>
+    <span>Runs groundcheck with <a href="https://pyodide.org/">Pyodide</a></span>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.js"></script>
+<script>
+"use strict";
+
+const EXAMPLE = {
+  answer: "Revenue reached $3.1 million in the third quarter, up from $2.8 million a year earlier [1]. "
+    + "Profit margins expanded to 47% over the same period. "
+    + "Customer satisfaction scores improved and the support team resolved tickets faster [1]. "
+    + "The company also opened three new offices in Europe. "
+    + "The new pricing reduced churn among small customers [3].",
+  sources: [
+    "The company reported revenue of $3.1 million in the third quarter, up from $2.8 million a year earlier. Headcount was flat at 45 employees.",
+    "Customer satisfaction scores improved during the period and the support team resolved tickets faster than before.",
+    "The new pricing did not reduce churn among small customers, according to the quarterly review.",
+  ],
+  threshold: 0.5,
+};
+
+const $ = (id) => document.getElementById(id);
+const answerBox = $("answer");
+const thresholdInput = $("threshold");
+const statusLine = $("status");
+let analyseInPython = null;
+let pending = 0;
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key === "class") node.className = value;
+    else node.setAttribute(key, value);
+  }
+  for (const child of children) node.append(child);
+  return node;
+}
+
+function sourceValues() {
+  return [...document.querySelectorAll(".source textarea")].map((area) => area.value);
+}
+
+function renumberSources() {
+  document.querySelectorAll(".source").forEach((row, index) => {
+    row.querySelector(".tag").textContent = `[${index + 1}]`;
+    row.querySelector("textarea").setAttribute("aria-label", `Source ${index + 1}`);
+  });
+}
+
+function addSource(text = "") {
+  const area = el("textarea", { spellcheck: "false" });
+  area.value = text;
+  area.addEventListener("input", scheduleAnalysis);
+  const remove = el("button", { class: "remove", type: "button", "aria-label": "Remove source" }, "Remove");
+  const row = el("div", { class: "source" }, el("span", { class: "tag" }), area, remove);
+  remove.addEventListener("click", () => { row.remove(); renumberSources(); analyse(); });
+  $("sources").append(row);
+  renumberSources();
+  return area;
+}
+
+function load({ answer, sources, threshold }) {
+  answerBox.value = answer;
+  $("sources").replaceChildren();
+  for (const source of sources) addSource(source);
+  if (!sources.length) addSource();
+  thresholdInput.value = String(threshold);
+  $("threshold-value").textContent = Number(threshold).toFixed(2);
+}
+
+const sourceLabel = (index) => (index >= 0 ? `closest: [${index + 1}]` : "no close source");
+
+function renderReport(report) {
+  $("score").replaceChildren(String(report.score), el("small", {}, "/100"));
+  $("score-meta").textContent = report.total_claims
+    ? `${report.supported_claims} of ${report.total_claims} claims supported`
+    : "no checkable claims";
+  $("score-bar").style.width = `${report.score}%`;
+  const findings = report.findings.map((finding) => {
+    const card = el("li", { class: `finding ${finding.severity}` },
+      el("div", { class: "finding-head" },
+        el("span", { class: "sev" }, finding.severity),
+        el("span", { class: "kind" }, finding.kind)));
+    if (finding.claim) card.append(el("div", { class: "claim" }, `"${finding.claim}"`));
+    card.append(el("div", { class: "detail" }, finding.detail));
+    if (finding.evidence) card.append(el("div", { class: "detail" }, finding.evidence));
+    return card;
+  });
+  if (!findings.length) findings.push(el("li", { class: "clean" }, "No findings: every checkable claim is grounded."));
+  $("findings").replaceChildren(...findings);
+  $("report").hidden = false;
+
+  $("claims").replaceChildren(...report.claims.map((claim) => el("li", {},
+    el("span", { class: `verdict ${claim.supported ? "yes" : "no"}` }, claim.supported ? "supported" : "unsupported"),
+    el("span", {}, claim.text),
+    el("span", { class: "overlap" }, `${Math.round(claim.support_score * 100)}% · ${sourceLabel(claim.best_source)}`))));
+  $("claims-section").hidden = !report.claims.length;
+}
+
+function analyse() {
+  if (!analyseInPython) return;
+  try {
+    const report = JSON.parse(analyseInPython(answerBox.value, JSON.stringify(sourceValues()), Number(thresholdInput.value)));
+    statusLine.hidden = true;
+    renderReport(report);
+  } catch (error) {
+    statusLine.hidden = false;
+    statusLine.className = "status failed";
+    statusLine.textContent = `groundcheck could not analyse this input: ${error.message}`;
+  }
+}
+
+function scheduleAnalysis() {
+  clearTimeout(pending);
+  pending = setTimeout(analyse, 250);
+}
+
+// Share links carry the texts in the fragment, which browsers never send to the server.
+function encodeShare(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeShare(token) {
+  const binary = atob(token.replace(/-/g, "+").replace(/_/g, "/"));
+  const value = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
+  if (typeof value.answer !== "string" || !Array.isArray(value.sources)) throw new Error("not a groundcheck link");
+  return { answer: value.answer, sources: value.sources.map(String), threshold: Number(value.threshold) || 0.5 };
+}
+
+function readShareLink() {
+  const token = new URLSearchParams(location.hash.slice(1)).get("g");
+  if (!token) return false;
+  try {
+    load(decodeShare(token));
+    return true;
+  } catch {
+    // A truncated or edited link is not worth an error box; the example takes its place.
+    return false;
+  }
+}
+
+async function copyShareLink() {
+  const token = encodeShare({ answer: answerBox.value, sources: sourceValues(), threshold: Number(thresholdInput.value) });
+  history.replaceState(null, "", `#g=${token}`);
+  const note = $("share-note");
+  try {
+    await navigator.clipboard.writeText(location.href);
+    note.textContent = "Link copied. It contains the texts themselves, so check them before you share.";
+  } catch {
+    note.textContent = "The link is in the address bar. It contains the texts themselves.";
+  }
+}
+
+async function showStars() {
+  try {
+    const response = await fetch("https://api.github.com/repos/RootX22/groundcheck");
+    if (!response.ok) return;
+    const { stargazers_count: stars } = await response.json();
+    $("stars").textContent = ` ${stars}`;
+  } catch {
+    // The count is decoration; the button works without it.
+  }
+}
+
+async function startPython() {
+  const pyodide = await loadPyodide();
+  const [archive, bridge] = await Promise.all([
+    fetch("groundcheck.zip").then((r) => r.arrayBuffer()),
+    fetch("playground.py").then((r) => r.text()),
+  ]);
+  pyodide.unpackArchive(archive, "zip");
+  pyodide.runPython("import os, sys; sys.path.insert(0, os.getcwd())");
+  pyodide.runPython(bridge);
+  analyseInPython = pyodide.globals.get("analyse");
+}
+
+if (!readShareLink()) load(EXAMPLE);
+answerBox.addEventListener("input", scheduleAnalysis);
+thresholdInput.addEventListener("input", () => {
+  $("threshold-value").textContent = Number(thresholdInput.value).toFixed(2);
+  scheduleAnalysis();
+});
+$("add-source").addEventListener("click", () => addSource().focus());
+$("example").addEventListener("click", () => { load(EXAMPLE); analyse(); });
+$("clear").addEventListener("click", () => { load({ answer: "", sources: [], threshold: 0.5 }); analyse(); answerBox.focus(); });
+$("share").addEventListener("click", copyShareLink);
+showStars();
+
+startPython().then(analyse).catch((error) => {
+  statusLine.className = "status failed";
+  statusLine.textContent = `Python could not start in this browser (${error.message}). Reload to try again, or use the CLI below.`;
+});
+</script>
+</body>
+</html>
