@@ -11,7 +11,8 @@ aren't actually supported — above all, **fabricated numbers**.
 
 **[Try it in your browser](https://rootx22.github.io/groundcheck/)**: paste an
 answer and its sources and see what it flags. It runs groundcheck itself through
-Pyodide, so nothing you paste leaves the page and no model is called.
+Pyodide, so nothing you paste leaves the page and no model is called. The same
+page is on [Hugging Face Spaces](https://huggingface.co/spaces/Root-2c/groundcheck).
 
 ```console
 $ groundcheck --answer answer.txt --source q3-report.txt --fail-on high
