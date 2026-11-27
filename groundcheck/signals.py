@@ -8,7 +8,7 @@ LLM-judge cannot do.
 
 from __future__ import annotations
 
-from .text import Number, content_tokens, extract_numbers, has_negation
+from .text import Number, content_tokens, extract_numbers, has_negation, split_sentences
 
 
 def _bigrams(tokens: list[str]) -> set[tuple[str, str]]:
@@ -96,3 +96,22 @@ def negation_conflict(claim: str, source: str, *, overlap_threshold: float = 0.6
     if overlap_score(claim, source) < overlap_threshold:
         return False
     return has_negation(claim) != has_negation(source)
+
+
+def closest_passage(claim: str, sources: list[str]) -> tuple[int, str] | None:
+    """The source sentence that shares the most wording with a claim.
+
+    Shown next to a flagged claim so a reviewer can compare the two without
+    opening the sources. None when no sentence shares a content word: that
+    absence is itself the evidence (the report never mentions margins).
+    """
+    if not content_tokens(claim):
+        return None
+    best: tuple[int, str] | None = None
+    best_score = 0.0
+    for i, source in enumerate(sources):
+        for sentence in split_sentences(source):
+            score = overlap_score(claim, sentence)
+            if score > best_score:
+                best, best_score = (i, sentence), score
+    return best

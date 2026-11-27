@@ -31,6 +31,8 @@ class Finding:
     claim: str
     detail: str
     evidence: str = ""
+    closest_source: int = -1      # source holding closest_passage, -1 if none
+    closest_passage: str = ""     # the source sentence nearest to the claim
 
     def to_dict(self) -> dict:
         return {
@@ -39,6 +41,8 @@ class Finding:
             "claim": self.claim,
             "detail": self.detail,
             "evidence": self.evidence,
+            "closest_source": self.closest_source,
+            "closest_passage": self.closest_passage,
         }
 
 

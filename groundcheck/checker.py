@@ -11,7 +11,13 @@ from __future__ import annotations
 import re
 
 from .model import ClaimResult, Finding, Report, Severity
-from .signals import best_overlap, negation_conflict, overlap_score, unsupported_numbers
+from .signals import (
+    best_overlap,
+    closest_passage,
+    negation_conflict,
+    overlap_score,
+    unsupported_numbers,
+)
 from .text import content_tokens, extract_numbers, split_sentences
 
 # [1]  [2,3]  [1, 2]  — citation markers pointing at 1-based source indices.
@@ -142,6 +148,11 @@ def check(answer: str, sources: list[str], *,
             )
             claim.findings.append(f)
             report.findings.append(f)
+
+        nearest = closest_passage(sentence, sources) if claim.findings else None
+        if nearest:
+            for f in claim.findings:
+                f.closest_source, f.closest_passage = nearest
 
         report.claims.append(claim)
 

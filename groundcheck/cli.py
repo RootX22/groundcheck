@@ -16,7 +16,7 @@ import sys
 
 from . import __version__
 from .checker import DEFAULT_SUPPORT_THRESHOLD, check
-from .model import Report, Severity
+from .model import Finding, Report, Severity
 
 EXIT_OK = 0            # score at or above --fail-under and no blocking findings
 EXIT_UNGROUNDED = 1    # below threshold, or a finding at/above --fail-on
@@ -88,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fail-on", default="never",
                    choices=["low", "medium", "high", "never"],
                    help="exit non-zero on a finding at/above this severity")
+    p.add_argument("--note", metavar="FILE",
+                   help="append a Markdown note for reviewers: each blocking claim over the "
+                        "closest source sentence, no score (for a PR comment or "
+                        "$GITHUB_STEP_SUMMARY)")
     p.add_argument("-V", "--version", action="version",
                    version=f"groundcheck {__version__}")
     return p
@@ -126,6 +130,38 @@ def _render_text(report: Report, stream) -> None:
     print(f"  {len(report.findings)} finding(s): {summary}", file=stream)
 
 
+def _quote(text: str) -> str:
+    return "\n".join(f"> {line}" for line in text.splitlines() or [""])
+
+
+def render_note(findings: list[Finding]) -> str:
+    """Claim and evidence side by side, so a reader can judge without the tool.
+
+    The score is left out on purpose: a decent score hides the one sentence
+    that matters, and the person signing off should read that sentence.
+    """
+    if not findings:
+        return ("### groundcheck: nothing blocking\n\n"
+                "Every flagged claim is below the failing level.\n")
+    claims = {f.claim for f in findings}
+    lines = [f"### groundcheck: {len(claims)} claim(s) not supported by the sources", ""]
+    for f in findings:
+        lines += [f"**{f.kind}** ({f.severity.label})", _quote(f.claim) if f.claim else "", ""]
+        if f.closest_passage:
+            lines += [f"Closest in source {f.closest_source + 1}:", _quote(f.closest_passage), ""]
+        elif f.claim:
+            lines += ["No sentence in the sources shares its wording.", ""]
+        lines += [f"_{f.evidence or f.detail}_", ""]
+    return "\n".join(lines)
+
+
+def _blocking(report: Report, fail_on: str) -> list[Finding]:
+    if fail_on == "never":
+        return list(report.findings)
+    level = Severity[fail_on.upper()]
+    return [f for f in report.findings if f.severity >= level]
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -147,13 +183,19 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _render_text(report, sys.stdout)
 
+    if args.note:
+        try:
+            with open(args.note, "a") as fh:
+                fh.write(render_note(_blocking(report, args.fail_on)))
+        except OSError as exc:
+            print(f"groundcheck: cannot write the note: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+
     exit_code = EXIT_OK
     if args.fail_under is not None and report.score < args.fail_under:
         exit_code = EXIT_UNGROUNDED
-    if args.fail_on != "never":
-        threshold = Severity[args.fail_on.upper()]
-        if any(f.severity >= threshold for f in report.findings):
-            exit_code = EXIT_UNGROUNDED
+    if args.fail_on != "never" and _blocking(report, args.fail_on):
+        exit_code = EXIT_UNGROUNDED
     return exit_code
 
 
