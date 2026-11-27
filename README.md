@@ -108,6 +108,7 @@ echo '{"answer": "...", "sources": ["...", "..."]}' | groundcheck --json-input -
 | `--threshold F` | Overlap below which a claim is unsupported (0–1, default 0.5) |
 | `--fail-under N` | Exit non-zero if the grounding score is below N |
 | `--fail-on LEVEL` | Exit non-zero on a finding at/above `low`/`medium`/`high` |
+| `--note FILE` | Append a Markdown note for reviewers (see below) |
 
 **Exit codes:** `0` grounded, `1` below threshold or a blocking finding, `2`
 usage. With neither `--fail-under` nor `--fail-on`, it only reports (exit 0).
@@ -127,6 +128,41 @@ Gate a RAG regression suite on groundedness:
 
 Any answer that invents a statistic (`--fail-on high`) or drops below 70%
 grounded fails the build.
+
+### A note for whoever signs off
+
+A failed run usually ends in a CI log that only the engineer reads, while the
+person approving the release sees a summary. `--note FILE` appends a short
+Markdown note with each blocking claim quoted over the source sentence that
+shares the most wording with it, so the claim and the evidence travel together.
+It leaves the score out on purpose: a decent score hides the one sentence that
+matters.
+
+```yaml
+      groundcheck --json-input "$case" --fail-on high --note "$GITHUB_STEP_SUMMARY"
+```
+
+```markdown
+### groundcheck: 2 claim(s) not supported by the sources
+
+**fabricated-number** (high)
+> Profit margins expanded to 47%.
+
+No sentence in the sources shares its wording.
+
+_'47%' not found in 1 source(s)_
+
+**fabricated-number** (high)
+> Third quarter revenue reached $4 million.
+
+Closest in source 1:
+> Revenue rose to $3.1 million in the third quarter.
+
+_'$4 million' not found in 1 source(s)_
+```
+
+The note appends rather than overwrites, so it can go straight into
+`$GITHUB_STEP_SUMMARY` or a file your pipeline posts as a pull-request comment.
 
 ## As a library
 

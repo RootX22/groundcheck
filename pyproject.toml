@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "groundcheck"
-version = "1.0.0"
+version = "1.1.0"
 description = "A deterministic groundedness linter for RAG/LLM answers — flags fabricated numbers, unsupported claims, and broken citations, with exit codes for CI."
 readme = "README.md"
 requires-python = ">=3.9"
